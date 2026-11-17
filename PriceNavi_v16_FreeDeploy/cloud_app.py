@@ -781,6 +781,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'ok':True})
             return self.send_json({'error':'Not found'},404)
         except PermissionError as e:return self.send_json({'error':str(e)},403)
+        except RuntimeError as e:return self.send_json({'error':str(e)},503)
         except (ValueError,TypeError,KeyError) as e:return self.send_json({'error':str(e)},400)
         except Exception as e:print('Request error:',e,flush=True);return self.send_json({'error':'서버 내부 오류가 발생했습니다.'},500)
 
