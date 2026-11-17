@@ -196,6 +196,92 @@ def record_system_event(level,event,detail=''):
         with connect() as c: c.execute('INSERT INTO system_events(level,event,detail,created_at) VALUES(?,?,?,?)',(level,event,str(detail)[:500],now()))
     except Exception: pass
 
+
+def dataforseo_request(path, payload=None, timeout=25):
+    if not DATAFORSEO_LOGIN or not DATAFORSEO_PASSWORD:
+        raise RuntimeError('최저가 검색 API 연결이 아직 준비되지 않았습니다.')
+    token=base64.b64encode((DATAFORSEO_LOGIN+':'+DATAFORSEO_PASSWORD).encode()).decode()
+    data=json.dumps(payload,ensure_ascii=False).encode() if payload is not None else None
+    req=urllib.request.Request('https://api.dataforseo.com'+path,data=data,headers={'Authorization':'Basic '+token,'Content-Type':'application/json'},method='POST' if payload is not None else 'GET')
+    with urllib.request.urlopen(req,timeout=timeout) as response:
+        return json.loads(response.read(2000000).decode('utf-8'))
+
+def normalize_search_keyword(value):
+    value=' '.join(str(value or '').strip().split())
+    if not value or len(value)>160: raise ValueError('검색어는 1~160자로 입력해 주세요.')
+    return value
+
+def parse_google_shopping_results(task):
+    results=[]
+    for result in task.get('result') or []:
+        for item in result.get('items') or []:
+            candidates=[item]+(item.get('items') or [])
+            for x in candidates:
+                if not isinstance(x,dict): continue
+                price=x.get('price')
+                currency=x.get('currency') or (price.get('currency') if isinstance(price,dict) else '')
+                if isinstance(price,dict): price=price.get('current')
+                try: price=int(round(float(price)))
+                except (TypeError,ValueError): continue
+                if price<=0 or str(currency).upper()!='KRW': continue
+                url=x.get('url') or x.get('shopping_url') or ''
+                if url and not str(url).startswith(('http://','https://')): url=''
+                results.append({'title':str(x.get('title') or item.get('title') or '')[:300],
+                    'seller':str(x.get('seller') or x.get('source') or '')[:120],
+                    'price':price,'currency':'KRW','url':url,
+                    'delivery':str((x.get('delivery_info') or {}).get('delivery_message') or '')[:160]})
+    unique={}
+    for x in results: unique[(x['seller'],x['title'],x['price'],x['url'])]=x
+    return sorted(unique.values(),key=lambda x:x['price'])[:40]
+
+def google_shopping_search(user_id, keyword, plan, role):
+    if not DATAFORSEO_LOGIN or not DATAFORSEO_PASSWORD:
+        raise RuntimeError('최저가 검색 API 연결이 아직 준비되지 않았습니다.')
+    normalized=normalize_search_keyword(keyword)
+    query_hash=hashlib.sha256(('ko-KR|'+normalized.casefold()).encode()).hexdigest()
+    month_key=datetime.now(timezone.utc).strftime('%Y-%m')
+    with connect() as c:
+        cached=c.execute('SELECT * FROM google_search_cache WHERE query_hash=?',(query_hash,)).fetchone()
+        if cached:
+            try: age=(datetime.now(timezone.utc)-datetime.strptime(cached['created_at'],'%Y-%m-%d %H:%M:%S UTC').replace(tzinfo=timezone.utc)).total_seconds()
+            except Exception: age=SEARCH_CACHE_HOURS*3600+1
+            if age<=SEARCH_CACHE_HOURS*3600:
+                return {'keyword':normalized,'results':json.loads(cached['results_json']),'lowest_price':cached['lowest_price'],'cached':True}
+        limit=SEARCH_LIMITS['admin'] if role=='admin' else SEARCH_LIMITS.get(plan,SEARCH_LIMITS['free'])
+        c.execute('BEGIN IMMEDIATE')
+        used=c.execute("SELECT COUNT(*) n FROM search_usage WHERE user_id=? AND month_key=? AND status IN ('pending','success')",(user_id,month_key)).fetchone()['n']
+        if used>=limit: raise ValueError(f'이번 달 검색 한도({limit}회)를 모두 사용했습니다.')
+        cur=c.execute("INSERT INTO search_usage(user_id,month_key,query_hash,provider,status,created_at) VALUES(?,?,?,'dataforseo','pending',?)",(user_id,month_key,query_hash,now()))
+        usage_id=cur.lastrowid
+    cost=0.0
+    try:
+        payload=[{'keyword':normalized,'location_name':'South Korea','language_code':'ko','depth':40,'priority':DATAFORSEO_PRIORITY,'sort_by':'price_low_to_high'}]
+        posted=dataforseo_request('/v3/merchant/google/products/task_post',payload,timeout=25)
+        tasks=posted.get('tasks') or []
+        if int(posted.get('status_code',0))!=20000 or not tasks or not tasks[0].get('id'):
+            raise RuntimeError('검색 제공업체가 작업을 접수하지 못했습니다.')
+        task_id=tasks[0]['id']
+        cost=float(tasks[0].get('cost') or posted.get('cost') or 0)
+        result_data=None
+        for attempt in range(10):
+            fetched=dataforseo_request('/v3/merchant/google/products/task_get/advanced/'+urllib.parse.quote(task_id,safe=''),None,timeout=20)
+            ftasks=fetched.get('tasks') or []
+            if ftasks and int(ftasks[0].get('status_code',0))==20000 and ftasks[0].get('result'):
+                result_data=ftasks[0]
+                break
+            time.sleep(4)
+        if result_data is None: raise RuntimeError('검색 결과 준비 시간이 길어지고 있습니다. 잠시 후 다시 시도해 주세요.')
+        results=parse_google_shopping_results(result_data)
+        if not results: raise RuntimeError('구글 쇼핑에서 원화 가격이 표시된 판매처를 찾지 못했습니다.')
+        lowest=results[0]['price']
+        with connect() as c:
+            c.execute("UPDATE search_usage SET status='success',cost_usd=?,result_count=? WHERE id=?",(cost,len(results),usage_id))
+            c.execute('INSERT OR REPLACE INTO google_search_cache(query_hash,keyword,results_json,lowest_price,provider_cost_usd,created_at) VALUES(?,?,?,?,?,?)',(query_hash,normalized,json.dumps(results,ensure_ascii=False),lowest,cost,now()))
+        return {'keyword':normalized,'results':results,'lowest_price':lowest,'cached':False}
+    except Exception:
+        with connect() as c: c.execute("UPDATE search_usage SET status='failed',cost_usd=? WHERE id=?",(cost,usage_id))
+        raise
+
 def charge_subscription(sub):
     order_id='ptb_'+secrets.token_urlsafe(24).replace('-','').replace('_','')[:30]
     billing_key=decrypt_billing_key(sub['billing_key_enc'])
