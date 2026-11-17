@@ -374,7 +374,22 @@ function openGoogleShopping(){const q=document.getElementById('name').value.trim
 async function addProduct(){try{const productName=document.getElementById('name').value.trim();const productUrl=document.getElementById('url').value.trim();const targetPrice=document.getElementById('target').value;const shippingCost=document.getElementById('shipping').value;let j=await req('/api/products/add',{name:productName,url:productUrl,target_price:targetPrice,shipping:shippingCost});msg.textContent='등록 완료. 첫 가격 확인은 백그라운드 작업에서 진행됩니다.';document.getElementById('name').value='';document.getElementById('url').value='';document.getElementById('target').value='';await load();await loadAccount()}catch(e){msg.textContent=e.message}}
 async function load(){let r=await fetch('/api/data');if(r.status===401){auth.hidden=false;app.hidden=true;return}let j=await r.json();products.innerHTML=j.products.map(p=>`<div class="product"><b>${esc(p.name)}</b> · ${p.current_price===null?'확인 전':Number(p.current_price).toLocaleString('ko-KR')+'원'} <span class="muted">(+배송 ${Number(p.shipping).toLocaleString('ko-KR')}원)</span><br><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a><p class="muted">목표가 ${p.target_price?Number(p.target_price).toLocaleString('ko-KR')+'원':'미설정'} · 최근 확인 ${esc(p.last_checked||'대기 중')} · ${esc(p.last_error||'')}</p><button class="secondary" onclick="checkPrice(${p.id})">지금 가격 확인</button> <button class="secondary" onclick="compareGoogle('${encodeURIComponent(p.name)}')">구글 쇼핑 최저가 검색</button> <button class="secondary" onclick="del(${p.id})">삭제</button></div>`).join('')||'<p class="muted">등록된 상품이 없습니다.</p>';alerts.innerHTML=j.alerts.map(a=>`<p>${esc(a.created_at)} · ${esc(a.message)}</p>`).join('')||'알림 없음'}
 async function checkPrice(id){try{msg.textContent='상품 페이지에서 가격을 확인하고 있습니다. 잠시만 기다려 주세요.';await req('/api/products/check',{id});msg.textContent='가격 확인을 완료했습니다.';await load()}catch(e){msg.textContent='가격 확인 실패: '+e.message;await load()}}
-function compareGoogle(encodedName){window.open('https://www.google.com/search?tbm=shop&q='+encodedName,'_blank','noopener,noreferrer')}
+async function compareGoogle(productId,encodedName){
+  const box=document.getElementById('googleResults'+productId);
+  if(!box)return;
+  box.textContent='구글 쇼핑 판매처와 가격을 비교하고 있습니다...';
+  try{
+    const j=await req('/api/search/google-shopping',{keyword:decodeURIComponent(encodedName)});
+    let out='<div class="hint"><b>최저가 '+Number(j.lowest_price).toLocaleString('ko-KR')+'원</b> · '+j.results.length+'개 판매처'+(j.cached?' · 저장된 검색 결과':'')+'</div>';
+    for(const x of j.results){
+      out+='<div class="product"><b>'+esc(x.title)+'</b><br>'+Number(x.price).toLocaleString('ko-KR')+'원 · '+esc(x.seller||'판매처 정보 없음');
+      if(x.url)out+=' · <a href="'+esc(x.url)+'" target="_blank" rel="noopener">판매처 열기</a>';
+      out+='<div class="muted">'+esc(x.delivery||'배송비는 판매처에서 확인해 주세요.')+'</div></div>';
+    }
+    box.innerHTML=out;
+    await loadAccount();
+  }catch(e){box.innerHTML='<p class="error">최저가 검색 실패: '+esc(e.message)+'</p>'}
+}
 async function del(id){if(!confirm('이 상품을 삭제할까요?'))return;await req('/api/products/delete',{id});load()}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 (async()=>{let r=await fetch('/api/me');if(r.ok){let j=await r.json();csrf=j.csrf;showApp();let q=new URLSearchParams(location.search);if(location.pathname==='/billing/issue'&&q.has('authKey')){try{await req('/api/billing/issue',{authKey:q.get('authKey'),customerKey:q.get('customerKey')});history.replaceState({},'', '/');await loadAccount();alert('정기결제 등록과 첫 결제가 완료되었습니다.')}catch(e){alert('정기결제 등록 실패: '+e.message)}}if(location.pathname==='/payment/success'||q.has('paymentKey')){try{await req('/api/billing/confirm',{paymentKey:q.get('paymentKey'),orderId:q.get('orderId'),amount:Number(q.get('amount'))});history.replaceState({},'', '/');await loadAccount();alert('PRO 결제가 확인되어 30일 이용이 시작되었습니다.')}catch(e){alert('결제 승인 확인 실패: '+e.message)}}}else if(location.pathname==='/billing/fail'){alert('카드 등록 실패: '+(new URLSearchParams(location.search).get('message')||'등록 실패'))}else if(location.pathname==='/payment/fail'){alert('결제가 완료되지 않았습니다: '+(new URLSearchParams(location.search).get('message')||'결제 실패'))}})();
