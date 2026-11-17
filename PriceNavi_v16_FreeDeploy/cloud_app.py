@@ -262,6 +262,7 @@ def google_shopping_search(user_id, keyword, plan, role):
             raise RuntimeError('검색 제공업체가 작업을 접수하지 못했습니다.')
         task_id=tasks[0]['id']
         cost=float(tasks[0].get('cost') or posted.get('cost') or 0)
+        with connect() as c: c.execute('UPDATE search_usage SET cost_usd=? WHERE id=?',(cost,usage_id))
         result_data=None
         for attempt in range(10):
             fetched=dataforseo_request('/v3/merchant/google/products/task_get/advanced/'+urllib.parse.quote(task_id,safe=''),None,timeout=20)
