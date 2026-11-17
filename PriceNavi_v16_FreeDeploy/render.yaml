@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: pricenavi
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: APP_SECRET
+        generateValue: true
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 8080
+      - key: DATABASE_PATH
+        value: /tmp/price_tracker.db
+      - key: CHECK_INTERVAL_HOURS
+        value: 6
+      - key: COOKIE_SECURE
+        value: "true"

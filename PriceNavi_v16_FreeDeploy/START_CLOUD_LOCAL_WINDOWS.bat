@@ -1,0 +1,7 @@
+@echo off
+chcp 65001 >nul
+set APP_SECRET=LOCAL-ONLY-CHANGE-THIS-SECRET-BEFORE-DEPLOYMENT-123456789
+set COOKIE_SECURE=false
+set PORT=8080
+python cloud_app.py
+pause
