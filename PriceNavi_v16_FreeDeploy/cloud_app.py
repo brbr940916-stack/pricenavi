@@ -491,7 +491,10 @@ class Handler(BaseHTTPRequestHandler):
                 count=c.execute('SELECT COUNT(*) n FROM products WHERE user_id=?',(s['user_id'],)).fetchone()['n']
             plan=u['plan'] if u['plan'] in PLAN_LIMITS else 'free'
             if u['plan_expires'] and u['plan_expires'] < now(): plan='free'
-            return self.send_json({'email':u['email'],'plan':plan,'role':u['role'],'used':count,'limit':PLAN_LIMITS[plan],'expires':u['plan_expires'],'pro_price':PRO_PRICE_KRW,'payments_enabled':PAYMENTS_ENABLED})
+            month_key=datetime.now(timezone.utc).strftime('%Y-%m')
+            with connect() as c: search_used=c.execute("SELECT COUNT(*) n FROM search_usage WHERE user_id=? AND month_key=? AND status IN ('pending','success')",(s['user_id'],month_key)).fetchone()['n']
+            search_limit=SEARCH_LIMITS['admin'] if u['role']=='admin' else SEARCH_LIMITS.get(plan,SEARCH_LIMITS['free'])
+            return self.send_json({'email':u['email'],'plan':plan,'role':u['role'],'used':count,'limit':PLAN_LIMITS[plan],'search_used':search_used,'search_limit':search_limit,'expires':u['plan_expires'],'pro_price':PRO_PRICE_KRW,'payments_enabled':PAYMENTS_ENABLED,'search_enabled':bool(DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD)})
         if path=='/api/admin/overview':
             if not s:return self.send_json({'error':'로그인이 필요합니다.'},401)
             with connect() as c:
