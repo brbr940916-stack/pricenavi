@@ -653,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
                     if target and total<=int(target):
                         prior=product['current_price']
                         if prior is None or int(prior)+int(product['shipping'] or 0)>int(target):
-                            c.execute('INSERT INTO alerts(user_id,product_id,message,created_at) VALUES(?,?,?,?)',(s['user_id'],pid,f\"{product['name']} 목표가 도달: 배송 포함 {total:,}원 (목표 {int(target):,}원)\",now()))
+                            c.execute('INSERT INTO alerts(user_id,product_id,message,created_at) VALUES(?,?,?,?)',(s['user_id'],pid,f"{product['name']} 목표가 도달: 배송 포함 {total:,}원 (목표 {int(target):,}원)\",now()))
                 return self.send_json({'ok':True,'price':price})
             if path=='/api/products/delete':
                 pid=int(d.get('id',0))
