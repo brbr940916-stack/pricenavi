@@ -720,6 +720,14 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('UPDATE users SET plan=?,plan_expires=? WHERE id=?',(plan,expires,uid))
                     c.execute('INSERT INTO subscription_events(user_id,event,plan,note,created_at) VALUES(?,?,?,?,?)',(uid,'admin_manual_change',plan,f'관리자 수동 변경, {days}일',now()))
                 return self.send_json({'ok':True})
+            if path=='/api/search/google-shopping':
+                keyword=normalize_search_keyword(d.get('keyword'))
+                with connect() as c:
+                    u=c.execute('SELECT plan,plan_expires,role FROM users WHERE id=?',(s['user_id'],)).fetchone()
+                plan=u['plan'] if u['plan'] in PLAN_LIMITS else 'free'
+                if u['plan_expires'] and u['plan_expires'] < now(): plan='free'
+                result=google_shopping_search(s['user_id'],keyword,plan,u['role'])
+                return self.send_json(result)
             if path=='/api/products/add':
                 name=str(d.get('name','')).strip();url=validate_url(str(d.get('url','')).strip());target=int(d['target_price']) if str(d.get('target_price','')).strip() else None;shipping=int(d.get('shipping') or 0)
                 if not name or len(name)>160:raise ValueError('상품명은 1~160자로 입력해 주세요.')
