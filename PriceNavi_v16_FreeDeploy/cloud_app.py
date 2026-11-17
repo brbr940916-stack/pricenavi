@@ -239,7 +239,7 @@ def google_shopping_search(user_id, keyword, plan, role):
         raise RuntimeError('최저가 검색 API 연결이 아직 준비되지 않았습니다.')
     normalized=normalize_search_keyword(keyword)
     query_hash=hashlib.sha256(('ko-KR|'+normalized.casefold()).encode()).hexdigest()
-    month_key=datetime.now(timezone.utc).strftime('%Y-%m')
+    month_key=datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m')
     with connect() as c:
         cached=c.execute('SELECT * FROM google_search_cache WHERE query_hash=?',(query_hash,)).fetchone()
         if cached:
@@ -378,10 +378,10 @@ async function checkPrice(id){try{msg.textContent='상품 페이지에서 가격
 async function compareGoogle(productId,encodedName){
   const box=document.getElementById('googleResults'+productId);
   if(!box)return;
-  box.textContent='구글 쇼핑 판매처와 가격을 비교하고 있습니다...';
+  box.textContent='구글 쇼핑 판매처와 가격을 비교하고 있습니다. 검색이 성공하면 1회 차감되며, 같은 검색어는 6시간 동안 결과를 재사용합니다.';
   try{
     const j=await req('/api/search/google-shopping',{keyword:decodeURIComponent(encodedName)});
-    let out='<div class="hint"><b>최저가 '+Number(j.lowest_price).toLocaleString('ko-KR')+'원</b> · '+j.results.length+'개 판매처'+(j.cached?' · 저장된 검색 결과':'')+'</div>';
+    let out='<div class="hint"><b>상품가 기준 최저가 '+Number(j.lowest_price).toLocaleString('ko-KR')+'원</b> · '+j.results.length+'개 판매처'+(j.cached?' · 6시간 캐시 결과':'')+'<br><span class="muted">배송비·옵션 가격은 판매처에서 최종 확인해 주세요.</span></div>';
     for(const x of j.results){
       out+='<div class="product"><b>'+esc(x.title)+'</b><br>'+Number(x.price).toLocaleString('ko-KR')+'원 · '+esc(x.seller||'판매처 정보 없음');
       if(x.url)out+=' · <a href="'+esc(x.url)+'" target="_blank" rel="noopener">판매처 열기</a>';
@@ -507,7 +507,7 @@ class Handler(BaseHTTPRequestHandler):
                 count=c.execute('SELECT COUNT(*) n FROM products WHERE user_id=?',(s['user_id'],)).fetchone()['n']
             plan=u['plan'] if u['plan'] in PLAN_LIMITS else 'free'
             if u['plan_expires'] and u['plan_expires'] < now(): plan='free'
-            month_key=datetime.now(timezone.utc).strftime('%Y-%m')
+            month_key=datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m')
             with connect() as c: search_used=c.execute("SELECT COUNT(*) n FROM search_usage WHERE user_id=? AND month_key=? AND status IN ('pending','success','charged')",(s['user_id'],month_key)).fetchone()['n']
             search_limit=SEARCH_LIMITS['admin'] if u['role']=='admin' else SEARCH_LIMITS.get(plan,SEARCH_LIMITS['free'])
             return self.send_json({'email':u['email'],'plan':plan,'role':u['role'],'used':count,'limit':PLAN_LIMITS[plan],'search_used':search_used,'search_limit':search_limit,'expires':u['plan_expires'],'pro_price':PRO_PRICE_KRW,'payments_enabled':PAYMENTS_ENABLED,'search_enabled':bool(DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD)})
@@ -521,7 +521,7 @@ class Handler(BaseHTTPRequestHandler):
                 paid_gross=c.execute("SELECT COALESCE(SUM(amount),0) n FROM payment_orders WHERE status IN ('paid','partially_refunded')").fetchone()['n']
                 paid_refunds=c.execute('SELECT COALESCE(SUM(amount),0) n FROM refund_records').fetchone()['n']
                 paid=max(0,paid_gross-paid_refunds)
-                month=datetime.now(timezone.utc).strftime('%Y-%m')
+                month=datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m')
                 monthly_gross=c.execute("SELECT COALESCE(SUM(amount),0) n FROM payment_orders WHERE status IN ('paid','partially_refunded') AND substr(paid_at,1,7)=?",(month,)).fetchone()['n']
                 monthly_refunds=c.execute("SELECT COALESCE(SUM(amount),0) n FROM refund_records WHERE substr(created_at,1,7)=?",(month,)).fetchone()['n']
                 monthly=max(0,monthly_gross-monthly_refunds)
