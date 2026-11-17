@@ -16,7 +16,12 @@ CHECK_HOURS = max(1, int(os.environ.get('CHECK_INTERVAL_HOURS', '6')))
 APP_SECRET = os.environ.get('APP_SECRET', '')
 ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', '').strip().lower()
 PLAN_LIMITS = {'free': 5, 'pro': 100, 'admin': 1000000}
-PRO_PRICE_KRW = max(100, int(os.environ.get('PRO_PRICE_KRW', '3900')))
+PRO_PRICE_KRW = max(100, int(os.environ.get('PRO_PRICE_KRW', '19900')))
+SEARCH_LIMITS = {'free': 5, 'pro': 100, 'admin': 1000000}
+DATAFORSEO_LOGIN = os.environ.get('DATAFORSEO_LOGIN', '').strip()
+DATAFORSEO_PASSWORD = os.environ.get('DATAFORSEO_PASSWORD', '').strip()
+SEARCH_CACHE_HOURS = max(1, int(os.environ.get('SEARCH_CACHE_HOURS', '6')))
+DATAFORSEO_PRIORITY = 2
 TOSS_CLIENT_KEY = os.environ.get('TOSS_CLIENT_KEY', '').strip()
 TOSS_SECRET_KEY = os.environ.get('TOSS_SECRET_KEY', '').strip()
 PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
@@ -41,6 +46,9 @@ def init_db():
         c.executescript('''
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'free', plan_expires TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'user');
         CREATE TABLE IF NOT EXISTS subscription_events(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, event TEXT NOT NULL, plan TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS search_usage(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, month_key TEXT NOT NULL, query_hash TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'dataforseo', status TEXT NOT NULL DEFAULT 'pending', cost_usd REAL NOT NULL DEFAULT 0, result_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_search_usage_user_month ON search_usage(user_id,month_key,status);
+        CREATE TABLE IF NOT EXISTS google_search_cache(query_hash TEXT PRIMARY KEY, keyword TEXT NOT NULL, results_json TEXT NOT NULL, lowest_price INTEGER, provider_cost_usd REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS payment_orders(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, order_id TEXT UNIQUE NOT NULL, plan TEXT NOT NULL, amount INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', payment_key TEXT UNIQUE, created_at TEXT NOT NULL, paid_at TEXT NOT NULL DEFAULT '', provider_payload TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS billing_customers(user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, customer_key TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL);
