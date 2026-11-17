@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY cloud_app.py /app/cloud_app.py
 COPY backup_db.py /app/backup_db.py
-COPY restore_db.py /app/restore_db.py
+
 COPY icons /app/icons
 RUN pip install --no-cache-dir "cryptography>=42,<46" && useradd --create-home --uid 10001 appuser && mkdir -p /data && chown -R appuser:appuser /data /app
 USER appuser
